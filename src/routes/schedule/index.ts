@@ -12,7 +12,6 @@ const schedule: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
       }
     );
     const pdf = await PdfParse(data, { version: 'v2.0.550' });
-    return pdf.text;
     return parseSchedule(pdf.text);
   });
 };
