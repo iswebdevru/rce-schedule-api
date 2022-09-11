@@ -1,9 +1,26 @@
 import { FastifyPluginAsync } from 'fastify';
+import { z } from 'zod';
 import { getSchedule } from '../../rce.service';
 
+const RequestQuery = z.object({
+  day: z.string(),
+});
+
 const schedule: FastifyPluginAsync = async (fastify): Promise<void> => {
-  fastify.get('/', async function () {
-    return getSchedule();
+  fastify.get('/', async function ({ query }) {
+    const validatedQuery = RequestQuery.safeParse(query);
+    const schedule = await getSchedule(
+      validatedQuery.success ? parseInt(validatedQuery.data.day) : null
+    );
+    if (!schedule) {
+      return {
+        error: 'Not found',
+      };
+    }
+    return {
+      error: null,
+      data: schedule,
+    };
   });
 };
 

@@ -26,7 +26,8 @@
     "fastify-cli": "^5.4.1",
     "fastify-plugin": "^4.0.0",
     "pdf-parse": "^1.1.1",
-    "ramda": "^0.28.0"
+    "ramda": "^0.28.0",
+    "zod": "^3.19.0"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
