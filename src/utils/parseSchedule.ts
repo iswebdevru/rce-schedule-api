@@ -30,9 +30,6 @@ function balancePieces(pieces: string[], i = 0): string[] {
 
 function splitPieces(pieces: string[]) {
   const result: string[][] = [];
-  if (pieces.length !== 8) {
-    console.log(pieces);
-  }
   for (let i = 0; i < pieces.length; i += 2) {
     result.push([pieces[i], pieces[i + 1]]);
   }
