@@ -36,7 +36,7 @@ function splitPieces(pieces: string[]) {
   return result;
 }
 
-export function parseSchedule(text: string) {
+export function parseRCESchedule(text: string) {
   text = normalizeInput(text);
   let groups: RegExpMatchArray | null = null;
   let currentSubjectIndexMatch: RegExpMatchArray | null = null;
@@ -91,4 +91,15 @@ export function parseSchedule(text: string) {
     pieces.push(line);
   }
   return result;
+}
+
+/**
+ * Parses the page which contains available schedules
+ * @param text
+ */
+
+export function parseRCESchedulePage(text: string) {
+  return [...text.matchAll(/\/assets\/rasp\/(\d+).pdf/g)].map(
+    ([_, name]) => name
+  );
 }
