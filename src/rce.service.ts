@@ -32,7 +32,7 @@ export async function getRCESchedule(
   day: number | null
 ): Promise<Schedule[] | null> {
   const filename = pipe(createDay, createBaseScheduleFilename)(day);
-  const response = await axios.get(`${RCE_ASSETS_PAGE}/${filename}`, {
+  const response = await axios.get(`${RCE_ASSETS_PAGE}/${filename}.pdf`, {
     responseType: 'arraybuffer',
   });
   if (response.headers['content-type'] !== 'application/pdf') {

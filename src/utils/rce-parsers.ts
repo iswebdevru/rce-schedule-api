@@ -16,7 +16,7 @@ function normalizeInput(text: string) {
 }
 
 function balancePieces(pieces: string[], i = 0): string[] {
-  if (pieces.length === 8) {
+  if (pieces.length >= 8) {
     return pieces;
   }
   if (pieces[i] === undefined) {
@@ -41,7 +41,7 @@ export function parseRCESchedule(text: string) {
   let groups: RegExpMatchArray | null = null;
   let currentSubjectIndexMatch: RegExpMatchArray | null = null;
   let subjectIndex = -1;
-  let prevSubjectIndex = -1;
+  let openedSubjectIndex = -1;
   let groupCounter = -1;
   let groupIndex = -1;
   let result: Schedule[] = [];
@@ -55,6 +55,9 @@ export function parseRCESchedule(text: string) {
       result = result.concat(groups.map(group => ({ group, subjects: [] })));
       groupCounter = groups.length;
       isOpenedToAddSubjects = true;
+      isOpenedToReadPieces = false;
+      subjectIndex = -1;
+      openedSubjectIndex = -1;
       continue;
     }
     if (!isOpenedToAddSubjects) {
@@ -62,10 +65,15 @@ export function parseRCESchedule(text: string) {
     }
     currentSubjectIndexMatch = line.match(/^([0-6]) *$/);
     if (currentSubjectIndexMatch) {
-      prevSubjectIndex = subjectIndex;
       subjectIndex = parseInt(currentSubjectIndexMatch[1]);
-      isOpenedToReadPieces = true;
-      if (subjectIndex === prevSubjectIndex) {
+      if (!isOpenedToReadPieces) {
+        isOpenedToReadPieces = true;
+        openedSubjectIndex = subjectIndex;
+        pieces = [];
+        continue;
+      }
+      if (subjectIndex === openedSubjectIndex) {
+        isOpenedToReadPieces = false;
         groupIndex = result.length - groupCounter;
         for (const [subject, cabinet] of splitPieces(balancePieces(pieces))) {
           if (groupIndex === result.length) {
@@ -73,15 +81,16 @@ export function parseRCESchedule(text: string) {
           }
           result[groupIndex++].subjects[subjectIndex] = {
             index: subjectIndex,
-            title: subject?.trim(),
-            cabinet: cabinet?.trim(),
+            title: subject.trim(),
+            cabinet: cabinet.trim(),
           };
         }
-        pieces = [];
-        isOpenedToReadPieces = false;
         if (subjectIndex === 6) {
           isOpenedToAddSubjects = false;
         }
+      } else {
+        pieces.push(line);
+        continue;
       }
       continue;
     }
