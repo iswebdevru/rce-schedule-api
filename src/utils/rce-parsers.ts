@@ -102,13 +102,24 @@ export function parseRCESchedule(text: string) {
   return result;
 }
 
+export interface ScheduleFileMetadata {
+  day: number;
+  month: number;
+  year: number;
+  version: number;
+}
+
 /**
  * Parses the page which contains available schedules
  * @param text
  */
-
-export function parseRCESchedulePage(text: string) {
-  return [...text.matchAll(/\/assets\/rasp\/(\d+).pdf/g)].map(
-    ([_, name]) => name
-  );
+export function parseRCESchedulePage(text: string): ScheduleFileMetadata[] {
+  return [
+    ...text.matchAll(/\/assets\/rasp\/(\d{2})(\d{2})(\d{4})(\d*).pdf/g),
+  ].map(([_, day, month, year, version]) => ({
+    day: +day,
+    month: +month,
+    year: +year,
+    version: version ? +version : 0,
+  }));
 }
