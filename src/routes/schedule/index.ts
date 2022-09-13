@@ -1,26 +1,19 @@
 import { FastifyPluginAsync } from 'fastify';
-import { z } from 'zod';
-import { getRCESchedule } from '../../rce.service';
-
-const RequestQuery = z.object({
-  day: z.string(),
-});
+import {
+  getRCEScheduleChanges,
+  RCEScheduleOptionsSchema,
+} from '../../rce.service';
 
 const schedule: FastifyPluginAsync = async (fastify): Promise<void> => {
   fastify.get('/', async function ({ query }) {
-    const validatedQuery = RequestQuery.safeParse(query);
-    const schedule = await getRCESchedule(
-      validatedQuery.success ? parseInt(validatedQuery.data.day) : null
-    );
-    if (!schedule) {
+    const validatedQuery = RCEScheduleOptionsSchema.safeParse(query);
+    if (!validatedQuery.success) {
       return {
-        error: 'Not found',
+        error: 'Wrong query parameters',
+        message: validatedQuery.error.message,
       };
     }
-    return {
-      error: null,
-      data: schedule,
-    };
+    return getRCEScheduleChanges(validatedQuery.data);
   });
 };
 
