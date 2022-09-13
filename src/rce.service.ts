@@ -24,11 +24,6 @@ function createScheduleFilename({
   }.pdf`;
 }
 
-async function getAvailableRCEScheduleMetadata() {
-  const { data } = await axios(RCE_SCHEDULE_PAGE);
-  return typeof data === 'string' ? parseRCESchedulePage(data) : [];
-}
-
 const filterRCEScheduleMetadata = curry(
   (scheduleMetadata: ScheduleFileMetadata[], searchDay: number | null) => {
     const date = new Date();
@@ -50,6 +45,11 @@ const findNewestRCEScheduleMetadata = (
     sortBy(prop('version')),
     filterRCEScheduleMetadata(scheduleMetadata)
   )(day);
+
+export async function getAvailableRCEScheduleMetadata() {
+  const { data } = await axios(RCE_SCHEDULE_PAGE);
+  return typeof data === 'string' ? parseRCESchedulePage(data) : [];
+}
 
 export async function getRCESchedule(
   day: number | null

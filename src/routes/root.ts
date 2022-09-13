@@ -1,9 +1,10 @@
-import { FastifyPluginAsync } from 'fastify'
+import { FastifyPluginAsync } from 'fastify';
+import { getAvailableRCEScheduleMetadata } from '../rce.service';
 
 const root: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
-  fastify.get('/', async function (request, reply) {
-    return { root: true }
-  })
-}
+  fastify.get('/days-with-changes', async function () {
+    return getAvailableRCEScheduleMetadata();
+  });
+};
 
 export default root;
