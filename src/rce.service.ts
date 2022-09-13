@@ -1,6 +1,6 @@
 import axios from 'axios';
 import PdfParse = require('pdf-parse');
-import { compose, curry, last, prop, sortBy } from 'ramda';
+import { compose, curry, last, pluck, prop, sortBy } from 'ramda';
 import { z } from 'zod';
 import { ErrorProne } from './contracts';
 import { normalizeDate } from './utils/date';
@@ -100,5 +100,16 @@ export async function getRCEScheduleChanges(
   return {
     error: null,
     data: parseRCESchedule(pdf.text),
+  };
+}
+
+export async function getRCEGroups() {
+  const schedule = await getRCEScheduleChanges({});
+  if (schedule.error !== null) {
+    return schedule;
+  }
+  return {
+    error: null,
+    data: pluck('group', schedule.data),
   };
 }
