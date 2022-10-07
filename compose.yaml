@@ -1,5 +1,6 @@
 services:
   api:
+    restart: always
     build: .
     ports:
       - '8082:3000'
