@@ -13,7 +13,7 @@ const schedule: FastifyPluginAsync = async (fastify): Promise<void> => {
         message: validatedQuery.error.message,
       };
     }
-    return getRCEScheduleChanges(validatedQuery.data);
+    return getRCEScheduleChanges(fastify, validatedQuery.data);
   });
 };
 

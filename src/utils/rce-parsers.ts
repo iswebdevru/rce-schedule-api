@@ -1,15 +1,5 @@
 import { insert } from 'ramda';
-
-export type Subject = {
-  index: number;
-  title: string;
-  cabinet: string;
-};
-
-export interface Schedule {
-  group: string;
-  subjects: Subject[];
-}
+import { DayWithChanges, Schedule } from '../contracts';
 
 function normalizeInput(text: string) {
   return text.replace(/\n(\d) ([а-яА-Я])/g, (_, g1, g2) => `\n${g1}\n${g2}`);
@@ -102,18 +92,11 @@ export function parseRCESchedule(text: string) {
   return result;
 }
 
-export interface ScheduleFileMetadata {
-  day: number;
-  month: number;
-  year: number;
-  version: number;
-}
-
 /**
  * Parses the page which contains available schedules
  * @param text
  */
-export function parseRCESchedulePage(text: string): ScheduleFileMetadata[] {
+export function parseRCEDaysWithChanges(text: string): DayWithChanges[] {
   return [
     ...text.matchAll(/\/assets\/rasp\/(\d{2})(\d{2})(\d{4})(\d*).pdf/g),
   ].map(([_, day, month, year, version]) => ({

@@ -1,19 +1,26 @@
 import axios from 'axios';
+import { FastifyInstance } from 'fastify';
 import PdfParse = require('pdf-parse');
-import { compose, curry, last, pluck, prop, sortBy } from 'ramda';
+import { pluck } from 'ramda';
 import { z } from 'zod';
-import { ErrorProne } from './contracts';
-import { normalizeDate } from './utils/date';
 import {
-  parseRCESchedulePage,
-  parseRCESchedule,
+  CachedSchedule,
+  DayWithChanges,
+  ErrorProne,
+  Fleeting,
   Schedule,
-  ScheduleFileMetadata,
-} from './utils/rce-parsers';
+} from './contracts';
+import { safeJSONParse } from './utils/common';
+import { normalizeDate } from './utils/date';
+import { parseRCEDaysWithChanges, parseRCESchedule } from './utils/rce-parsers';
 
 const RCE_HOST = 'https://xn--j1al4b.xn--p1ai';
 const RCE_SCHEDULE_PAGE = `${RCE_HOST}/obuchaushchimsya/raspisanie_zanyatii`;
 const RCE_ASSETS_PAGE = `${RCE_HOST}/assets/rasp`;
+
+const WEEK = 604800;
+
+const DAYS_WITH_CHANGES_CACHE_KEY = 'rce/days-with-changes';
 
 export const RCEScheduleOptionsSchema = z.object({
   day: z.string().optional(),
@@ -24,94 +31,148 @@ export const RCEScheduleOptionsSchema = z.object({
 
 export type RCEScheduleOptions = z.infer<typeof RCEScheduleOptionsSchema>;
 
-function createScheduleFilename({
-  day,
-  month,
-  year,
-  version,
-}: ScheduleFileMetadata) {
+function createScheduleFilename({ day, month, year, version }: DayWithChanges) {
   return `${normalizeDate(day)}${normalizeDate(month)}${year}${
     version ? version : ''
   }.pdf`;
 }
 
-const filterRCEScheduleMetadataByDate = curry(
-  (scheduleMetadata: ScheduleFileMetadata[], searchDate: Date) => {
-    return scheduleMetadata.filter(({ day, month, year }) => {
-      const sameDay = searchDate.getDate() === day;
-      const sameMonth = searchDate.getMonth() + 1 === month;
-      const sameYear = searchDate.getFullYear() === year;
-      return sameDay && sameMonth && sameYear;
-    });
-  }
-);
+function createScheduleCacheKey({ day, month, year }: DayWithChanges) {
+  return `rce/schedule/${day}/${month}/${year}`;
+}
 
-const convertRCEOptionsToDate = ({ year, month, day }: RCEScheduleOptions) => {
-  const defaultDate = new Date();
-  return new Date(
-    typeof year === 'string' ? parseInt(year) : defaultDate.getFullYear(),
-    typeof month === 'string' ? parseInt(month) - 1 : defaultDate.getMonth(),
-    typeof day === 'string' ? parseInt(day) : defaultDate.getDate()
+async function getCachedDaysWithChanges(fastify: FastifyInstance) {
+  const data = await fastify.redis.get(DAYS_WITH_CHANGES_CACHE_KEY);
+  const cachedDays = data
+    ? safeJSONParse<Fleeting<DayWithChanges>[]>(data)!
+    : [];
+  await Promise.all(
+    cachedDays
+      .filter(day => day.expiresIn < Date.now())
+      .map(expiredDay => {
+        return fastify.redis.del(createScheduleCacheKey(expiredDay.data));
+      })
   );
-};
+  return cachedDays.filter(day => day.expiresIn > Date.now());
+}
 
-const findNewestRCEScheduleMetadata = (
-  scheduleMetadata: ScheduleFileMetadata[],
-  options: RCEScheduleOptions
-) =>
-  compose(
-    last<ScheduleFileMetadata>,
-    sortBy(prop('version')),
-    filterRCEScheduleMetadataByDate(scheduleMetadata),
-    convertRCEOptionsToDate
-  )(options);
-
-export async function getAvailableRCEDaysWithChanges() {
+async function getUncachedDaysWitchChanges() {
   const { data } = await axios(RCE_SCHEDULE_PAGE);
-  return typeof data === 'string' ? parseRCESchedulePage(data) : [];
+  return parseRCEDaysWithChanges(data);
+}
+
+export async function getRCEDaysWithChanges(fastify: FastifyInstance) {
+  const cachedDays = await getCachedDaysWithChanges(fastify);
+  const freshDays = await getUncachedDaysWitchChanges();
+  const updatedDays: Fleeting<DayWithChanges>[] = [];
+  const newDays: Fleeting<DayWithChanges>[] = [];
+
+  freshDays.forEach(freshDay => {
+    const updatedDay = cachedDays.find(cachedDay => {
+      return (
+        cachedDay.data.day === freshDay.day &&
+        cachedDay.data.month === freshDay.month &&
+        cachedDay.data.year === freshDay.year &&
+        cachedDay.data.version < freshDay.version
+      );
+    });
+    const oldDay = cachedDays.find(cachedDay => {
+      return (
+        cachedDay.data.day === freshDay.day &&
+        cachedDay.data.month === freshDay.month &&
+        cachedDay.data.year === freshDay.year
+      );
+    });
+    if (updatedDay) {
+      updatedDays.push({
+        expiresIn: updatedDay.expiresIn,
+        data: { ...freshDay },
+      });
+    }
+    if (!oldDay) {
+      newDays.push({
+        expiresIn: Date.now() + WEEK,
+        data: { ...freshDay },
+      });
+    }
+  });
+  const composedDays = cachedDays
+    .filter(cachedDay => {
+      return !updatedDays.find(updatedDay => {
+        return (
+          cachedDay.data.year === updatedDay.data.year &&
+          cachedDay.data.month === updatedDay.data.month &&
+          cachedDay.data.day === updatedDay.data.day
+        );
+      });
+    })
+    .concat(updatedDays, newDays)
+    .sort((a, b) =>
+      new Date(b.data.year, b.data.month, b.data.day) >
+      new Date(a.data.year, a.data.month, a.data.day)
+        ? 1
+        : -1
+    );
+  await fastify.redis.set(
+    DAYS_WITH_CHANGES_CACHE_KEY,
+    JSON.stringify(composedDays)
+  );
+  return pluck('data', composedDays);
+}
+
+function applySearchOptions(options: RCEScheduleOptions) {
+  return (day: DayWithChanges) => {
+    const today = new Date();
+    return (
+      day.year === (options.year ? +options.year : today.getFullYear()) &&
+      day.month === (options.month ? +options.month : today.getMonth() + 1) &&
+      day.day === (options.day ? +options.day : today.getDate())
+    );
+  };
+}
+
+async function getUncachedRCEScheduleChanges(day: DayWithChanges) {
+  const filename = createScheduleFilename(day);
+  const response = await axios.get(`${RCE_ASSETS_PAGE}/${filename}`, {
+    responseType: 'arraybuffer',
+  });
+  const pdf = await PdfParse(response.data, { version: 'v2.0.550' });
+  return parseRCESchedule(pdf.text);
 }
 
 export async function getRCEScheduleChanges(
+  fastify: FastifyInstance,
   options: RCEScheduleOptions
 ): Promise<ErrorProne<Schedule[]>> {
-  const scheduleMetadataList = await getAvailableRCEDaysWithChanges();
-  const exactScheduleMetadata = findNewestRCEScheduleMetadata(
-    scheduleMetadataList,
-    options
-  );
-  if (!exactScheduleMetadata) {
+  const daysWithChanges = await getRCEDaysWithChanges(fastify);
+  const day = daysWithChanges.find(applySearchOptions(options));
+  if (!day) {
     return {
       error: 'Not found',
       message:
         'Requested schedule with specified parameters does not exist. Try calling /days-with-changes to find available.',
     };
   }
-  const filename = createScheduleFilename(exactScheduleMetadata);
-  const response = await axios.get(`${RCE_ASSETS_PAGE}/${filename}`, {
-    responseType: 'arraybuffer',
-  });
-  if (response.headers['content-type'] !== 'application/pdf') {
-    return {
-      error: 'Internal',
-      message: `Wrong return type from ${RCE_HOST}`,
+  let schedule: Schedule[];
+  const scheduleCacheKey = createScheduleCacheKey(day);
+  const cachedScheduleData = await fastify.redis.get(scheduleCacheKey);
+  const cachedSchedule = cachedScheduleData
+    ? safeJSONParse<CachedSchedule>(cachedScheduleData)
+    : null;
+
+  if (cachedSchedule && cachedSchedule.version === day.version) {
+    schedule = cachedSchedule.data;
+  } else {
+    schedule = await getUncachedRCEScheduleChanges(day);
+    const updatedCache: CachedSchedule = {
+      data: schedule,
+      version: day.version,
     };
+    await fastify.redis.set(scheduleCacheKey, JSON.stringify(updatedCache));
   }
-  const pdf = await PdfParse(response.data, { version: 'v2.0.550' });
-  console.log(pdf);
 
   return {
     error: null,
-    data: parseRCESchedule(pdf.text),
-  };
-}
-
-export async function getRCEGroups() {
-  const schedule = await getRCEScheduleChanges({});
-  if (schedule.error !== null) {
-    return schedule;
-  }
-  return {
-    error: null,
-    data: pluck('group', schedule.data),
+    data: schedule,
   };
 }
