@@ -66,7 +66,7 @@ const findNewestRCEScheduleMetadata = (
     convertRCEOptionsToDate
   )(options);
 
-export async function getAvailableRCEScheduleMetadata() {
+export async function getAvailableRCEDaysWithChanges() {
   const { data } = await axios(RCE_SCHEDULE_PAGE);
   return typeof data === 'string' ? parseRCESchedulePage(data) : [];
 }
@@ -74,7 +74,7 @@ export async function getAvailableRCEScheduleMetadata() {
 export async function getRCEScheduleChanges(
   options: RCEScheduleOptions
 ): Promise<ErrorProne<Schedule[]>> {
-  const scheduleMetadataList = await getAvailableRCEScheduleMetadata();
+  const scheduleMetadataList = await getAvailableRCEDaysWithChanges();
   const exactScheduleMetadata = findNewestRCEScheduleMetadata(
     scheduleMetadataList,
     options
@@ -97,6 +97,8 @@ export async function getRCEScheduleChanges(
     };
   }
   const pdf = await PdfParse(response.data, { version: 'v2.0.550' });
+  console.log(pdf);
+
   return {
     error: null,
     data: parseRCESchedule(pdf.text),

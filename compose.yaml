@@ -1,6 +1,18 @@
 services:
   api:
-    restart: always
     build: .
+    restart: always
     ports:
       - '8082:3000'
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis
+    links:
+      - redis
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - /data
+    command: redis-server --appendonly yes
