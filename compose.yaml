@@ -13,4 +13,4 @@ services:
     restart: always
     volumes:
       - /data
-    command: redis-server --appendonly yes
+    command: redis-server --save 60 1
