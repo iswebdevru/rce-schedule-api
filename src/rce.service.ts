@@ -18,7 +18,7 @@ const RCE_HOST = 'https://xn--j1al4b.xn--p1ai';
 const RCE_SCHEDULE_PAGE = `${RCE_HOST}/obuchaushchimsya/raspisanie_zanyatii`;
 const RCE_ASSETS_PAGE = `${RCE_HOST}/assets/rasp`;
 
-const WEEK = 604800;
+const WEEK = 604800000;
 
 const DAYS_WITH_CHANGES_CACHE_KEY = 'rce/days-with-changes';
 
@@ -63,11 +63,11 @@ async function getUncachedDaysWitchChanges() {
 
 export async function getRCEDaysWithChanges(fastify: FastifyInstance) {
   const cachedDays = await getCachedDaysWithChanges(fastify);
-  const freshDays = await getUncachedDaysWitchChanges();
+  const fetchedDays = await getUncachedDaysWitchChanges();
   const updatedDays: Fleeting<DayWithChanges>[] = [];
   const newDays: Fleeting<DayWithChanges>[] = [];
 
-  freshDays.forEach(freshDay => {
+  fetchedDays.forEach(freshDay => {
     const updatedDay = cachedDays.find(cachedDay => {
       return (
         cachedDay.data.day === freshDay.day &&
@@ -96,6 +96,9 @@ export async function getRCEDaysWithChanges(fastify: FastifyInstance) {
       });
     }
   });
+  if (!updatedDays.length && !newDays.length) {
+    return pluck('data', cachedDays);
+  }
   const composedDays = cachedDays
     .filter(cachedDay => {
       return !updatedDays.find(updatedDay => {
