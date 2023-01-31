@@ -41,7 +41,11 @@ function createScheduleCacheKey({ day, month, year }: DayWithChanges) {
   return `rce/schedule/${day}/${month}/${year}`;
 }
 
-async function getCachedDaysWithChanges(fastify: FastifyInstance) {
+function dateFromDayWithChanges({ year, month, day }: DayWithChanges) {
+  return new Date(year, month - 1, day);
+}
+
+async function getDaysWithChangesFromCache(fastify: FastifyInstance) {
   const data = await fastify.redis.get(DAYS_WITH_CHANGES_CACHE_KEY);
   const cachedDays = data
     ? safeJSONParse<Fleeting<DayWithChanges>[]>(data)!
@@ -56,43 +60,48 @@ async function getCachedDaysWithChanges(fastify: FastifyInstance) {
   return cachedDays.filter(day => day.expiresIn > Date.now());
 }
 
-async function getUncachedDaysWitchChanges() {
+async function getDaysWithChangesFromRCE() {
   const { data } = await axios(RCE_SCHEDULE_PAGE);
   return parseRCEDaysWithChanges(data);
 }
 
 export async function getRCEDaysWithChanges(fastify: FastifyInstance) {
-  const cachedDays = await getCachedDaysWithChanges(fastify);
-  const fetchedDays = await getUncachedDaysWitchChanges();
+  const [cachedDays, fetchedDays] = await Promise.all([
+    getDaysWithChangesFromCache(fastify),
+    getDaysWithChangesFromRCE(),
+  ]);
   const updatedDays: Fleeting<DayWithChanges>[] = [];
   const newDays: Fleeting<DayWithChanges>[] = [];
 
-  fetchedDays.forEach(freshDay => {
+  fetchedDays.forEach(fetchedDay => {
+    if (Date.now() > dateFromDayWithChanges(fetchedDay).getTime() + WEEK) {
+      return;
+    }
     const updatedDay = cachedDays.find(cachedDay => {
       return (
-        cachedDay.data.day === freshDay.day &&
-        cachedDay.data.month === freshDay.month &&
-        cachedDay.data.year === freshDay.year &&
-        cachedDay.data.version < freshDay.version
+        cachedDay.data.day === fetchedDay.day &&
+        cachedDay.data.month === fetchedDay.month &&
+        cachedDay.data.year === fetchedDay.year &&
+        cachedDay.data.version < fetchedDay.version
       );
     });
     const oldDay = cachedDays.find(cachedDay => {
       return (
-        cachedDay.data.day === freshDay.day &&
-        cachedDay.data.month === freshDay.month &&
-        cachedDay.data.year === freshDay.year
+        cachedDay.data.day === fetchedDay.day &&
+        cachedDay.data.month === fetchedDay.month &&
+        cachedDay.data.year === fetchedDay.year
       );
     });
     if (updatedDay) {
       updatedDays.push({
         expiresIn: updatedDay.expiresIn,
-        data: { ...freshDay },
+        data: { ...fetchedDay },
       });
     }
     if (!oldDay) {
       newDays.push({
         expiresIn: Date.now() + WEEK,
-        data: { ...freshDay },
+        data: { ...fetchedDay },
       });
     }
   });
@@ -111,10 +120,7 @@ export async function getRCEDaysWithChanges(fastify: FastifyInstance) {
     })
     .concat(updatedDays, newDays)
     .sort((a, b) =>
-      new Date(b.data.year, b.data.month, b.data.day) >
-      new Date(a.data.year, a.data.month, a.data.day)
-        ? 1
-        : -1
+      dateFromDayWithChanges(b.data) > dateFromDayWithChanges(a.data) ? 1 : -1
     );
   await fastify.redis.set(
     DAYS_WITH_CHANGES_CACHE_KEY,
